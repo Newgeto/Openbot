@@ -1,12 +1,9 @@
-import "dotenv/config";
 import { Client, GatewayIntentBits, Events } from "discord.js";
+import { config } from "./config";
 import { createChatCompletion } from "./openai";
-
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-if (!DISCORD_TOKEN) throw new Error("Missing DISCORD_TOKEN in environment");
-if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY in environment");
+import { getHistory, recordTurn } from "./memory";
+import { allowRequest } from "./rateLimit";
+import { splitMessage } from "./discord";
 
 const client = new Client({
   intents: [
@@ -37,14 +34,30 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
 
+    if (!allowRequest(message.author.id)) {
+      await message.reply(
+        "Tu vas un peu vite 🙂 attends quelques secondes avant de me repinger."
+      );
+      return;
+    }
+
     await message.channel.sendTyping();
 
+    const history = getHistory(message.channelId);
     const answer = await createChatCompletion({
       userMessage: prompt,
-      username: message.author.username
+      username: message.author.username,
+      history
     });
 
-    await message.reply(answer);
+    recordTurn(message.channelId, { role: "user", content: prompt });
+    recordTurn(message.channelId, { role: "assistant", content: answer });
+
+    const chunks = splitMessage(answer);
+    await message.reply(chunks[0]);
+    for (const chunk of chunks.slice(1)) {
+      await message.channel.send(chunk);
+    }
   } catch (err) {
     console.error(err);
     try {
@@ -54,4 +67,4 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-client.login(DISCORD_TOKEN);
+client.login(config.discordToken);

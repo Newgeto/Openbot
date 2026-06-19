@@ -1,27 +1,26 @@
 import OpenAI from "openai";
+import { config } from "./config";
+import type { ChatTurn } from "./memory";
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: config.openaiApiKey
 });
 
 export async function createChatCompletion(input: {
   userMessage: string;
   username?: string;
+  history?: ChatTurn[];
 }): Promise<string> {
+  const userContent = input.username
+    ? `${input.username}: ${input.userMessage}`
+    : input.userMessage;
+
   const response = await client.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: config.openaiModel,
     messages: [
-      {
-        role: "system",
-        content:
-          "Tu es OpenBot, un chatbot Discord simple, utile et concis. Réponds en français."
-      },
-      {
-        role: "user",
-        content: input.username
-          ? `${input.username}: ${input.userMessage}`
-          : input.userMessage
-      }
+      { role: "system", content: config.systemPrompt },
+      ...(input.history ?? []),
+      { role: "user", content: userContent }
     ],
     temperature: 0.7
   });
